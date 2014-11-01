@@ -13,18 +13,20 @@ import (
 	"strings"
 )
 
-type basicCRUD struct {
-}
+type (
+	BasicCRUD struct {
+	}
 
-type PaginationResult struct {
-	Offset int
-	Total  int64
-	Limit  int
-}
+	PaginationResult struct {
+		Offset int
+		Total  int64
+		Limit  int
+	}
 
-type FileUploader func(field string, file multipart.File, fileHeader *multipart.FileHeader) (string, string)
+	FileUploader func(field string, file multipart.File, fileHeader *multipart.FileHeader) (string, string)
+)
 
-func (crud basicCRUD) FindByField(field string, value interface{}, model interface{}) error {
+func (crud BasicCRUD) FindByField(field string, value interface{}, model interface{}) error {
 	o := orm.NewOrm()
 
 	qs := o.QueryTable(model)
@@ -36,7 +38,7 @@ func (crud basicCRUD) FindByField(field string, value interface{}, model interfa
 	return err
 }
 
-func (crud basicCRUD) FindAllByField(field string, value interface{}, model interface{}, entityList interface{}) error {
+func (crud BasicCRUD) FindAllByField(field string, value interface{}, model interface{}, entityList interface{}) error {
 	o := orm.NewOrm()
 
 	qs := o.QueryTable(model)
@@ -48,34 +50,34 @@ func (crud basicCRUD) FindAllByField(field string, value interface{}, model inte
 	return err
 }
 
-func (crud basicCRUD) Get(id int64, model interface{}) error {
+func (crud BasicCRUD) Get(id int64, model interface{}) error {
 	return crud.FindByField("id", id, model)
 }
 
-func (crud basicCRUD) Delete(model interface{}) (int64, error) {
+func (crud BasicCRUD) Delete(model interface{}) (int64, error) {
 	o := orm.NewOrm()
 	count, err := o.Delete(model)
 	return count, err
 }
 
-func (crud basicCRUD) Create(model interface{}) (int64, error) {
+func (crud BasicCRUD) Create(model interface{}) (int64, error) {
 	o := orm.NewOrm()
 	id, err := o.Insert(model)
 	return id, err
 }
 
-func (crud basicCRUD) Save(model interface{}) (int64, error) {
+func (crud BasicCRUD) Save(model interface{}) (int64, error) {
 	o := orm.NewOrm()
 	count, err := o.Update(model)
 	return count, err
 }
 
-func (crud basicCRUD) List(model interface{}) orm.QuerySeter {
+func (crud BasicCRUD) List(model interface{}) orm.QuerySeter {
 	o := orm.NewOrm()
 	return o.QueryTable(model)
 }
 
-func (crud basicCRUD) Paginate(query orm.QuerySeter, result interface{}, page int, perPage int) (int64, error) {
+func (crud BasicCRUD) Paginate(query orm.QuerySeter, result interface{}, page int, perPage int) (int64, error) {
 	offset := (page - 1) * perPage
 
 	_ = offset
@@ -85,7 +87,7 @@ func (crud basicCRUD) Paginate(query orm.QuerySeter, result interface{}, page in
 	return count, err
 }
 
-func (crud basicCRUD) FetchByQuery(model interface{}, getParams url.Values, result interface{}) (PaginationResult, error) {
+func (crud BasicCRUD) FetchByQuery(model interface{}, getParams url.Values, result interface{}) (PaginationResult, error) {
 	query := crud.List(model)
 
 	presult := PaginationResult{Offset: 0}
@@ -212,7 +214,7 @@ func SetModelField(model reflect.Value, idx int, value string) {
 
 }
 
-func (crud basicCRUD) ParseSubEntity(modelPtr interface{}, form url.Values, prefix string, idx int) int {
+func (crud BasicCRUD) ParseSubEntity(modelPtr interface{}, form url.Values, prefix string, idx int) int {
 	rval := reflect.ValueOf(modelPtr).Elem()
 	typ := rval.Type()
 	count := 0
@@ -236,7 +238,7 @@ func (crud basicCRUD) ParseSubEntity(modelPtr interface{}, form url.Values, pref
 	return count
 }
 
-func (crud basicCRUD) FromForm(modelPtr interface{}, form url.Values) {
+func (crud BasicCRUD) FromForm(modelPtr interface{}, form url.Values) {
 	rval := reflect.ValueOf(modelPtr).Elem()
 	typ := rval.Type()
 
@@ -251,7 +253,7 @@ func (crud basicCRUD) FromForm(modelPtr interface{}, form url.Values) {
 	}
 }
 
-func (crud basicCRUD) UploadFiles(modelPtr interface{}, req *http.Request, uploader FileUploader) {
+func (crud BasicCRUD) UploadFiles(modelPtr interface{}, req *http.Request, uploader FileUploader) {
 	if req.MultipartForm == nil {
 		return
 	}
