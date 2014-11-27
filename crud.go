@@ -1,9 +1,12 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"github.com/astaxie/beego/orm"
+	"github.com/go-floki/floki"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -11,6 +14,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type (
@@ -56,7 +60,15 @@ func (crud BasicCRUD) Get(id int64, model interface{}) error {
 
 func (crud BasicCRUD) Delete(model interface{}) (int64, error) {
 	o := orm.NewOrm()
+
+	TriggerEntityEvent(model, "beforeDelete", model)
+
 	count, err := o.Delete(model)
+
+	if err == nil {
+		TriggerEntityEvent(model, "afterDelete", model)
+	}
+
 	return count, err
 }
 
@@ -68,7 +80,15 @@ func (crud BasicCRUD) Create(model interface{}) (int64, error) {
 
 func (crud BasicCRUD) Save(model interface{}) (int64, error) {
 	o := orm.NewOrm()
+
+	TriggerEntityEvent(model, "beforeSave", model)
+
 	count, err := o.Update(model)
+
+	if err == nil {
+		TriggerEntityEvent(model, "afterSave", model)
+	}
+
 	return count, err
 }
 
@@ -103,7 +123,15 @@ func (crud BasicCRUD) FetchByQuery(model interface{}, getParams url.Values, resu
 
 		value, _ := url.QueryUnescape(parts[2])
 
-		query = query.Filter(key, value)
+		switch value {
+		case "true":
+			query = query.Filter(parts[0], true)
+		case "false":
+			query = query.Filter(parts[0], false)
+		default:
+			query = query.Filter(key, value)
+		}
+
 	}
 
 	totalCount, err := query.Count()
@@ -156,7 +184,14 @@ func (crud BasicCRUD) FetchByQuery(model interface{}, getParams url.Values, resu
 
 }
 
-func SetModelField(model reflect.Value, idx int, value string) {
+func min(a, b int) int {
+	if a > b {
+		return b
+	}
+	return a
+}
+
+func SetModelField(model reflect.Value, idx int, value string) error {
 	rfield := model.Field(idx)
 
 	switch rfield.Kind() {
@@ -208,9 +243,52 @@ func SetModelField(model reflect.Value, idx int, value string) {
 			rfield.SetString(value)
 		}
 
+	case reflect.Struct:
+		if value != "" {
+			switch t := rfield.Interface().(type) {
+
+			//
+			case time.Time:
+				valLen := len(value)
+				inVal := value
+				format := ""
+
+				switch valLen {
+				case 19:
+					format = "2006-01-02T15:04:05"
+					inVal = value[:min(valLen, 19)]
+				case 16:
+					format = "2006-01-02T15:04"
+					inVal = value[:min(valLen, 16)]
+				case 10:
+					format = "2006-01-02"
+					inVal = value[:min(valLen, 10)]
+				}
+
+				if format != "" {
+					val, err := time.ParseInLocation(format, inVal, floki.TimeZone)
+					if err == nil {
+						rfield.Set(reflect.ValueOf(val))
+						fmt.Println("parsed:", inVal, "=>", val, "using format:", format)
+					} else {
+						fmt.Println("error parsing date '", value, "':", err)
+					}
+
+				} else {
+					fmt.Println("invalid data:", value)
+				}
+
+			default:
+				fmt.Println("don't know how to parse:", t)
+			}
+		}
+
 	default:
-		fmt.Println("SetModelField(): unhandled field type:", rfield.Kind())
+		fmt.Println("can't set field of type:", rfield.Kind())
+		return errors.New("unhandled field type: " + string(rfield.Kind()))
 	}
+
+	return nil
 
 }
 
@@ -232,10 +310,40 @@ func (crud BasicCRUD) ParseSubEntity(modelPtr interface{}, form url.Values, pref
 			count = count + 1
 		}
 
-		SetModelField(rval, i, value)
+		err := SetModelField(rval, i, value)
+		if err != nil {
+			fmt.Println("can't set value for field", fieldName, ":", err.Error())
+		}
 	}
 
 	return count
+}
+
+func (crud BasicCRUD) FixDatesInEntity(modelPtr interface{}) {
+	rval := reflect.ValueOf(modelPtr).Elem()
+	typ := rval.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		p := typ.Field(i)
+
+		if p.Name == "Id" {
+			continue
+		}
+
+		rfield := rval.Field(i)
+
+		switch rfield.Kind() {
+		case reflect.Struct:
+			switch t := rfield.Interface().(type) {
+
+			//
+			case time.Time:
+				rfield.Set(reflect.ValueOf(t.In(floki.TimeZone)))
+
+			}
+
+		}
+	}
 }
 
 func (crud BasicCRUD) FromForm(modelPtr interface{}, form url.Values) {
@@ -254,7 +362,9 @@ func (crud BasicCRUD) FromForm(modelPtr interface{}, form url.Values) {
 }
 
 func (crud BasicCRUD) UploadFiles(modelPtr interface{}, req *http.Request, uploader FileUploader) {
+	fmt.Println("in upload files")
 	if req.MultipartForm == nil {
+		fmt.Println("crud.UploadFiles(): not a multipart form!")
 		return
 	}
 
@@ -272,6 +382,8 @@ func (crud BasicCRUD) UploadFiles(modelPtr interface{}, req *http.Request, uploa
 
 		fieldMap[p.Name] = rval.Field(i)
 	}
+
+	log.Println("uploading..")
 
 	// process files
 	for key, _ := range req.MultipartForm.File {
